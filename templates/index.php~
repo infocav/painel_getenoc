@@ -1,0 +1,15 @@
+<html>
+<head>
+<title>{titulo}</title>
+<meta charset="UTF-8" />
+<link rel="stylesheet" type="text/css" href="style.css" />
+</head>
+<body>
+<div id="cabecalho">{cabecalho}</div>
+<div id="menu">{menu}</div>
+<div id="coluna1">{coluna1}</div>
+<div id="coluna2">{coluna2}</div>
+<div id="coluna3">{coluna3}</div>
+<div id="rodape">{rodape}</div>
+</body>
+</html>

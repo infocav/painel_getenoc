@@ -1,0 +1,97 @@
+<?php
+
+class boot
+{
+    
+  
+    private $modulo;
+    private $view;
+    private $option;
+    
+    function boot($option)
+    {
+        $this->option = $option;
+        $this->modulo = $option['modulo'];
+        $this->view = $option['view'];
+    }
+    
+    
+    function load()
+    {
+    	
+        if (!$this->getModulo() && !$this->getView())
+        {
+           
+				//ULTIMA COISA A SER CHAMADA   
+    			$clView = new classView();
+    			$clView->display(); 
+           //require_once (PATH_TEMPLATES .DS.'index.php');
+
+        }
+        else
+        {
+            if (!$this->getModulo())
+            {
+                require_once (PATH_TEMPLATES .DS.$this->getView().'.php');
+         
+            }
+            else
+            {
+                require_once (PATH_MODEL .DS.$this->getView().'.php');
+               
+                $modulo = $this->getView();
+                $modulo = new $modulo($this->getOption());
+                $resp = $modulo->execModulo($this->getModulo());
+                echo $resp;
+							
+                require_once (PATH_TEMPLATES .DS.$this->getView().'.php');
+
+
+            }
+        }
+        
+        	//ULTIMA COISA A SER CHAMADA   
+    			$clView = new classView();
+    			$clView->display(); 
+         
+         
+            
+    }
+    
+   
+    
+  
+    function getOption()
+    {
+        return $this->option;
+    }
+    
+    
+    
+    
+    function getModulo()
+    {
+        return $this->modulo;
+    }
+    
+    function getView()
+    {
+        return $this->view;
+    }
+    
+    
+    
+    function setModulo($modulo)
+    {
+        $this->modulo = $modulo;
+    }
+    
+    function setView($view)
+    {
+        $this->view = $view;
+    }
+ 	
+    
+}
+
+?>

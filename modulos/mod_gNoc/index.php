@@ -1,0 +1,781 @@
+<?php
+
+class gNocController {
+
+    private $options;
+    private $msg;
+    private $cliente;
+    private $empresa;
+    private $empesaDAO;
+    private $mensagens = array("mensagens" => array());
+
+    function __construct($options) {
+        $this->options = $options;
+        //var_dump($options);
+    }
+
+    function run() {
+
+        if (array_key_exists('action', $this->options)) {
+            // echo "executando acao: " . $this->options['action'];
+            $this->action();
+        }
+
+        if (array_key_exists('view', $this->options)) {
+            require_once(dirname(__FILE__) . DS . $this->options['view'] . 'View.php');
+            $classe = $this->options['view'] . 'View';
+            $view = new $classe();
+            $view->loadViewTemplate(null, 'conteudo');
+            $view->display();
+        }
+    }
+
+    function registrarMensagens($mensagem, $sub_act, $status) {
+        $m = array("sub_act" => $sub_act, "status" => $status, "mensagem" => $mensagem);
+
+        array_push($this->mensagens["mensagens"], $m);
+
+        //  var_dump($this->mensagens["mensagens"]);
+    }
+
+    function debug($debug) {
+        $m = array("debug" => $debug);
+
+        array_push($this->mensagens["debug"], $m);
+    }
+
+    function action() {
+
+
+        //   var_dump($this->options);
+        if (array_key_exists('action', $this->options)) {
+            if (strcasecmp($this->options['action'], "cadastrar") == 0) {
+                $this->register_user();
+            }
+
+            if (strcasecmp($this->options['action'], "buscar") == 0) {
+                $this->buscar_user();
+            }
+
+            if (strcasecmp($this->options['action'], "listarEmpresas") == 0) {
+                $this->listrarEmpresas();
+            }
+
+            if (strcasecmp($this->options['action'], "getEmpresaById") == 0) {
+                $this->getEmpresaById();
+                $m = array("empresa" => $this->empresa->getJson());
+                $this->mensagens["empresa"] = $m;
+                echo json_encode($this->mensagens);
+            }
+
+            if (strcasecmp($this->options['action'], "cadEmpresa") == 0) {
+                $this->executarEmpresa();
+            }
+        }
+    }
+
+    function buscarUsuariosPostgres() {
+
+        require_once(dirname(__FILE__) . DS . 'empresa/usuarioDAO.php');
+        $usuarioDAO = new usuarioDAO();
+        return $usuarioDAO->buscarUsuarios($this->options['usernameUser']);
+    }
+
+    function cadastrarUsuario() {
+        //  $this->buscarEmpresa();
+        $usuariosList = array();
+        require_once(dirname(__FILE__) . DS . 'empresa/usuarioModel.php');
+
+        //  var_dump($this->options);
+        $usuario = new usuarioModel();
+        //   $usuario->setId($i['id']);
+        $usuario->setId_empresa($this->empresa->getid_postgres());
+        $usuario->setGivenName($this->options['givenNameUser']);
+        $usuario->setSurname($this->options['surnameUser']);
+        $usuario->setUsername($this->options['usernameUser']);
+        $usuario->setEmail($this->options['emailUser']);
+        $usuario->setSenha($this->options['senhaUser']);
+        $usuario->setTipo_usuario('1');
+        $usuario->setSt_ldap('N');
+        $usuario->setst_zabbix('N');
+        $usuario->setst_grafana('N');
+
+        array_push($usuariosList, $usuario);
+
+        $usuariosList = $this->cadastrarUsuariosPostgres($usuariosList);
+
+        //array_push($usuariosList, $this->empresa->getUsuariosList());
+        //$this->empresa->setUsuariosList($usuariosList);
+    }
+
+    function getEmpresaById() {
+        require_once(dirname(__FILE__) . DS . 'empresa/empresaModel.php');
+        $this->empresa = new empresaModel($this->options);
+
+        require_once(dirname(__FILE__) . DS . 'empresa/empresaDAO.php');
+        $this->empesaDAO = new empresaDAO($this->empresa); //se essas duas checagens passarem então cadastra empresa e dá continuidade ao processo
+
+        if ($this->empesaDAO->buscarByIdEmpresa($this->options['id'])) {
+            $this->carregaDadosDaEmpresa();
+        }
+    }
+
+    function buscarEmpresa() {
+        require_once(dirname(__FILE__) . DS . 'empresa/empresaModel.php');
+        $this->empresa = new empresaModel($this->options);
+
+        require_once(dirname(__FILE__) . DS . 'empresa/empresaDAO.php');
+        $this->empesaDAO = new empresaDAO($this->empresa); //se essas duas checagens passarem então cadastra empresa e dá continuidade ao processo
+        //$this->checkEmpresaExiste();
+        //
+        if ($this->empesaDAO->carregaEmpresa()) {
+            $this->carregaDadosDaEmpresa();
+        }
+    }
+
+    function carregaDadosDaEmpresa() {
+        $this->empresa = $this->empesaDAO->getEmpresa();
+        $this->empresa->setUrl_zabbix("https://".$this->empresa->getalias_postgres().".".ZABBIX_BASE);
+        $this->empresa->setUrl_grafana("https://".$this->empresa->getalias_postgres().".".GRAFANA_BASE);
+    //$this->empresa->setUrl_grafana("https://localhost.com.br");
+
+        if ($this->empesaDAO->carregaUsuarios()) {
+            $this->empresa = $this->empesaDAO->getEmpresa();
+        }
+
+        if ($this->empesaDAO->carregaZabbix()) {
+            $this->empresa = $this->empesaDAO->getEmpresa();
+        }
+
+        if ($this->empesaDAO->carregaGrafana()) {
+            $this->empresa = $this->empesaDAO->getEmpresa();
+        }
+    }
+
+    function checaVariaveis() {
+        
+    }
+
+    function executarEmpresa() {
+        //primeiro checa se todos as variáveis vindas do formulário HTML estão preenchidas
+        $this->checaVariaveis();
+        $this->buscarEmpresa();
+
+        if (strcasecmp($this->options['sub_act'], "btn_cadastrar_empresa") == 0) {
+            if (null == ($this->empresa->getId_postgres() )) {
+
+                $this->cadastrarEmpresa();
+            } else {
+                $this->empresa->setStatus_criacao('N');
+                $this->empresa->setMsg_criacao("EMPRESA EXISTE");
+
+                $this->registrarMensagens("EMPRESA JÁ EXISTE", $this->options['sub_act'], "N");
+            }
+        }
+
+        //SÓ CONTINUA SE A EMPRESA EXISTIR
+        if (null != ($this->empresa->getId_postgres() )) {
+
+            if (strcasecmp($this->options['sub_act'], "btn_criar_ldap") == 0) {
+
+                $this->empresa->setUsuariosList($this->cadastrarUsuariosLdap($this->empresa->getUsuariosList()));
+                $this->empresa->setUsuariosList($this->atualizaStUsuariosPostgres($this->empresa->getUsuariosList()));
+            }
+
+            if (strcasecmp($this->options['sub_act'], "btn_cadastrar_usuario") == 0) {
+
+                $usuariosArray = $this->buscarUsuariosPostgres();
+
+                // var_dump($usuariosArray);
+                // echo "Quantidade de usuarios encontrados: ".count($usuariosArray);
+
+                if (count($usuariosArray) == 0) {
+                    $this->cadastrarUsuario();
+                    if ($this->empesaDAO->carregaUsuarios()) {
+                        $this->empresa = $this->empesaDAO->getEmpresa();
+                    }
+                    //AJUSTAR
+                    $this->empresa->setUsuariosList($this->cadastrarUsuariosLdap($this->empresa->getUsuariosList()));
+                    $this->empresa->setUsuariosList($this->atualizaStUsuariosPostgres($this->empresa->getUsuariosList()));
+                    $this->criarUsuariosZabbix(false);
+                    // $this->criarIntegracaoZabbixGrafana(); //VAI SER SUBSTITUIDO PELA NOVA FUNCAO 
+                    $this->criarIntegracaoZabbixGrafanaUsuario();
+                    $this->empresa->setUsuariosList($this->atualizaStUsuariosPostgres($this->empresa->getUsuariosList()));
+                } else {
+                    $this->registrarMensagens("USUÁRIO " . $this->options['usernameUser'] . " JÁ EXISTE, NÃO CADASTRADO, ", $this->options['sub_act'], "N");
+                }
+            }
+
+
+            if (strcasecmp($this->options['sub_act'], "btn_criar_bd_zabbix") == 0) {
+                if ($this->empresa->getZabbix()->getZabbix_id() === null) {
+                    $this->empresa->getZabbix()->setZabbixIpDb('172.17.0.1');
+                }
+                //PASSO
+                // $this->empresa->setZabbix($this->cadastrarZabbixDocker($this->empresa));
+                $this->cadastrarZabbixDocker($this->empresa);
+                //PASSO
+                if ($this->empresa->getZabbix()->getZabbix_id() === null) {
+                    $this->empresa->setZabbix($this->cadastrarZabbixPostgres($this->empresa->getZabbix()));
+                }
+                $this->empresa->setZabbix($this->atualizarZabbixPostgres($this->empresa->getZabbix()));
+                // } else {
+                // $this->empresa->setStatus_zabbix('N');
+                //  $this->empresa->setMsg_criacao($this->empresa->getMsg_criacao() . "ZABBIX JÁ CADASTRADO");
+                // $this->registrarMensagens("ZABBIX JÁ CADASTRADO", $this->options['sub_act'], "N");
+                //  }
+                //PASSO
+                //   $this->empresa->setZabbix($this->criarZabbixFrontEnd($this->empresa));
+                //echo ($this->empresa->getJson());
+            }
+
+            if (strcasecmp($this->options['sub_act'], "btn_criar_docker_zabbix") == 0) {
+                if ($this->empresa->getZabbix()->getZabbix_id() != null) {
+                    //PASSO
+                    if ($this->empresa->getZabbix()->getSt_docker_zbx() === 'N') {
+                        $this->empresa->setZabbix($this->criarDockerZabbix($this->empresa->getZabbix()));
+                        $this->empresa->setZabbix($this->atualizarZabbixPostgres($this->empresa->getZabbix()));
+                    } else {
+                        $this->empresa->setStatus_docker('N');
+                        $this->empresa->setMsg_criacao($this->empresa->getMsg_criacao() . "JA EXISTE UM INSTÂNCIA DO DOCKER CRIADA");
+
+                        $this->registrarMensagens("JA EXISTE UM INSTÂNCIA DO DOCKER CRIADA", $this->options['sub_act'], "N");
+                    }
+                } else {
+//                    $this->empresa->setStatus_docker('N');
+//                    $this->empresa->setMsg_criacao($this->empresa->getMsg_criacao() . "DOCKER NÃO PODE SER CRIADO POIS O ZABBIX NÃO FOI CRIADO");
+                    $this->registrarMensagens("DOCKER NÃO PODE SER CRIADO POIS O ZABBIX NÃO FOI CRIADO", $this->options['sub_act'], "N");
+                }
+            }
+
+            if (strcasecmp($this->options['sub_act'], "btn_criar_front_zabbix") == 0) {
+                if ($this->empresa->getZabbix()->getZabbix_id() != null) {
+                    //PASSO
+                    if ($this->empresa->getZabbix()->getSt_front_zbx() === 'N') {
+                        $this->empresa->setZabbix($this->criarZabbixFrontEnd($this->empresa));
+                        $this->empresa->setZabbix($this->atualizarZabbixPostgres($this->empresa->getZabbix()));
+                    } else {
+//                        $this->empresa->setStatus_frontend_zabbix('N');
+//                        $this->empresa->setMsg_criacao($this->empresa->getMsg_criacao() . "JA EXISTE UM INSTÂNCIA DO FRONTEND CRIADA");
+                        $this->registrarMensagens("JA EXISTE UM INSTÂNCIA DO FRONTEND CRIADA", $this->options['sub_act'], "N");
+                    }
+                } else {
+//                    $this->empresa->setStatus_frontend_zabbix('N');
+//                    $this->empresa->setMsg_criacao($this->empresa->getMsg_criacao() . "FRONTEND NÃO PODE SER CRIADO POIS O ZABBIX NÃO FOI CRIADO");
+                    $this->registrarMensagens("FRONTEND NÃO PODE SER CRIADO POIS O ZABBIX NÃO FOI CRIADO", $this->options['sub_act'], "N");
+                }
+                //echo ($this->empresa->getJson());
+            }
+
+
+
+            if (strcasecmp($this->options['sub_act'], "btn_criar_usuarios_zabbix") == 0) {
+                //  echo " Criando usuário zabbix \n";
+                //              if ($this->empresa->getZabbix()->getSt_user_ldap_zabbix() === 'N') {
+
+                $this->criarUsuariosZabbix(true);
+                $this->empresa->setUsuariosList($this->atualizaStUsuariosPostgres($this->empresa->getUsuariosList()));
+            }
+
+
+            if (strcasecmp($this->options['sub_act'], "btn_integra_zabbix_grafana") == 0) {
+                //  echo " Criando usuário zabbix \n";
+
+                $this->criarIntegracaoZabbixGrafana();
+                $this->empresa->setUsuariosList($this->atualizaStUsuariosPostgres($this->empresa->getUsuariosList()));
+            }
+        } else {
+//            $this->empresa->setStatus_ldap('N');
+//            $this->empresa->setMsg_criacao("EMPRESA NÃO EXISTE. NÃO CRIADO");;
+            $this->registrarMensagens("EMPRESA NÃO EXISTE. NÃO CRIADO", $this->options['sub_act'], "N");
+            //echo ($this->empresa->getJson());
+        }
+
+
+
+        $m = array("empresa" => $this->empresa->getJson());
+
+        $this->mensagens["empresa"] = $m;
+
+        // array_push($this->mensagens["empresa"], $m);
+        //var_dump($this->mensagens);
+        echo json_encode($this->mensagens);
+
+//        echo ($this->empresa->getJson());
+    }
+
+    function criarIntegracaoZabbixGrafana() {
+        //  if ($this->empresa->getZabbix()->getSt_user_ldap_zabbix() === 'S') {
+        require_once(dirname(__FILE__) . DS . 'empresa/grafanaDAO.php');
+        $grafana = new grafanaDAO();
+        //$grafana->integraGrafanaZabbix($this->empresa);
+        //$this->empresa = $grafana->integraGrafanaZabbix($this->empresa);
+        $this->empresa = $grafana->criaOrgDataSource($this->empresa);
+        $this->empresa = $grafana->registrarUserZabbix($this->empresa);
+        $this->empesaDAO->setEmpresa($this->empresa);
+        $this->empesaDAO->insereGrafana();
+    }
+
+    function criarIntegracaoZabbixGrafanaUsuario() {
+        //  if ($this->empresa->getZabbix()->getSt_user_ldap_zabbix() === 'S') {
+        require_once(dirname(__FILE__) . DS . 'empresa/grafanaDAO.php');
+        $grafana = new grafanaDAO();
+        //$grafana->integraGrafanaZabbix($this->empresa);
+        //$this->empresa = $grafana->integraGrafanaZabbix($this->empresa);
+        // var_dump($this->empresa);
+        $this->empresa = $grafana->registrarUserZabbix($this->empresa);
+        $this->empesaDAO->setEmpresa($this->empresa);
+    }
+
+    function criarUsuariosZabbix($padrao) {
+
+        // if ($this->empresa->getZabbix()->getSt_user_ldap_zabbix() === 'N') { //AJUSTAR, POIS QUANDO VAI CRIAR USUÁRIOS INDIVIDUAIS A FLAG getSt_user_ldap_zabbix INFORMAR QUE JÁ FOI ADICIONADO
+        // SÓ QUE, SÓ FOI ADICIONADO NA PRIMEIRA EXECUÇÃO
+        //DEVERÁ SER CRIADO UMA FLAG PARA CADA USUÁRIO
+        require_once(dirname(__FILE__) . DS . 'empresa/zabbix.php');
+        $zabbix = new zabbix($this->empresa);
+        $usuarios = $this->empresa->getUsuariosList();
+        //$alias = $this->empresa->getalias_postgres();
+        foreach ($usuarios as $key => $value) {
+            if ($value->getst_ldap() === 'S') {
+                if ($value->getst_zabbix() === 'N') { //fazer flag na tabela do usuario para identificar a criacao do zabbix
+//                require_once(dirname(__FILE__) . DS . 'empresa/zabbix.php');
+//                $zabbix = new zabbix($this->empresa);
+                    //NOVO ADICIONANDO EM 22/01/2019
+                    $retorno = $zabbix->inserirUsuarioLdapZabbix($value);
+                    if ($retorno['status'] == 0) {
+                        $this->registrarMensagens("USUÁRIO" . $value->getusername() . " CRIADO NO ZABBIX COM SUCESSO", $this->options['sub_act'], "S");
+                        $value->setst_zabbix('S');
+                        $usuarios[$key] = $value;
+                        if ($padrao) {
+                            $this->empresa->getZabbix()->setSt_user_ldap_zabbix('S');
+                            $this->empresa->setStatus_zabbix('S');
+                        }
+                    } else {
+
+                        $this->registrarMensagens($retorno['mensagem'], $this->options['sub_act'], "N");
+                        $value->setst_zabbix('N');
+                        $usuarios[$key] = $value;
+                        if ($padrao) {
+                            $this->empresa->getZabbix()->setSt_user_ldap_zabbix('N');
+                            $this->empresa->setStatus_zabbix('N');
+                        }
+                    }
+
+                    //ANTIGO ALTERADO EM 22/01/2019
+//                    if ($zabbix->inserirUsuarioLdapZabbix($value)) {
+//                        $this->registrarMensagens("USUÁRIO" . $value->getusername() . " CRIADO NO ZABBIX COM SUCESSO", $this->options['sub_act'], "S");
+//                        $value->setst_zabbix('S');
+//                        $usuarios[$key] = $value;
+//                        if ($padrao) {
+//                            $this->empresa->getZabbix()->setSt_user_ldap_zabbix('S');
+//                            $this->empresa->setStatus_zabbix('S');
+//                        }
+//                    } else {
+//                        $this->registrarMensagens("USUÁRIO" . $value->getusername() . " NÃO CRIADO NO ZABBIX", $this->options['sub_act'], "N");
+//                        $value->setst_zabbix('N');
+//                        $usuarios[$key] = $value;
+//                        if ($padrao) {
+//                            $this->empresa->getZabbix()->setSt_user_ldap_zabbix('N');
+//                            $this->empresa->setStatus_zabbix('N');
+//                        }
+//                    }
+                    $this->empresa->setZabbix($zabbix->getEmpresa()->getZabbix());
+                    $this->empresa->setZabbix($this->atualizarZabbixPostgres($this->empresa->getZabbix()));
+                } else {
+                    // $this->empresa->getZabbix()->setSt_user_ldap_zabbix('N');
+                    $this->empresa->setMsg_criacao($this->empresa->getMsg_criacao() . "JÁ FOI INSERIDO OS USUÁRIO DO LDAP NO ZABBIX");
+                    $this->registrarMensagens("JÁ FOI INSERIDO O USUÁRIO " . $value->getusername() . " DO LDAP NO ZABBIX", $this->options['sub_act'], "N");
+                }
+            }
+        }
+
+        //$this->empresa->setUsuariosList($usuarios);
+
+        $this->empresa->setUsuariosList($this->atualizaStUsuariosPostgres($usuarios));
+        $this->empresa->setZabbix($zabbix->getEmpresa()->getZabbix());
+
+
+
+        $this->empresa->setZabbix($this->atualizarZabbixPostgres($this->empresa->getZabbix()));
+    }
+
+    function listrarEmpresas() {
+
+        require_once(dirname(__FILE__) . DS . 'empresa/empresaDAO.php');
+        $empresasDAO = new empresaDAO(null);
+        echo $empresasDAO->listarEmpresas();
+    }
+
+    function cadastrarEmpresa() {
+
+
+        // if ($this->empresa->getStatus_criacao() === 'S') {
+        //  echo 'Status da criação: '.$this->empresa->getStatus_criacao().'<br>\n';
+        $this->empesaDAO->insereEmpresa();
+        $this->empresa = $this->empesaDAO->getEmpresa();
+        if (null != ($this->empresa->getId_postgres() )) {
+
+            $this->empresa->setStatus_criacao('S');
+            $this->registrarMensagens("EMPRESA CRIADA", $this->options['sub_act'], "S");
+        }
+        $this->empresa->setUsuariosList($this->cadastrarUsuariosPostgres($this->empresa->getUsuariosList()));
+        //}
+        //echo ($this->empresa->getJson()); //retorno
+    }
+
+    function checkEmpresaExiste() {
+        if ($this->empesaDAO->checaAlias()) {
+            $this->empresa->setStatus_criacao('N');
+            $this->empresa->setMsg_criacao("Alias já existe");
+            $this->registrarMensagens("ALIAS JÁ EXISTE", $this->options['sub_act'], "N");
+        } else {
+            $this->empresa->setStatus_criacao('S');
+            //  $this->registrarMensagens("ALIAS CRIADO", $this->options['sub_act'], "S");
+        }
+
+        if ($this->empesaDAO->checaCPF() && $this->empresa->getStatus_criacao() != 'S') {
+
+            $this->empresa->setStatus_criacao('N');
+            $this->empresa->setMsg_criacao($this->empresa->getMsg_criacao() . ", CNPJ já existe");
+            $this->registrarMensagens("CNPJ JÁ EXISTE", $this->options['sub_act'], "N");
+        } else {
+            $this->empresa->setStatus_criacao('S');
+        }
+    }
+
+    function criarDockerZabbix($zabbix) {
+        require_once(dirname(__FILE__) . DS . 'empresa/docker.php');
+        $docker = new docker($zabbix);
+
+        $retorno = $docker->criarDocker();
+        if ($retorno['status'] == 0) {
+            //if ($docker->criarDocker() == 1) {
+            //if (1 == 1) {
+
+            $this->empresa->setStatus_docker('S');
+            $zabbix->setst_docker_zbx('S');
+
+            $docker->rodarDocker();
+
+            $this->empresa->setMsg_criacao($this->empresa->getMsg_criacao() . "DOCKER CRIADO");
+            $this->registrarMensagens("DOCKER CRIADO", $this->options['sub_act'], "S");
+
+            // echo "Docker criado \n <br>";
+        } else {
+            // echo "Docker NÃO criado \n <br>"; 
+            $this->empresa->setStatus_docker('N');
+            $zabbix->setst_docker_zbx('N');
+            $this->empresa->setMsg_criacao($this->empresa->getMsg_criacao() . "DOCKER NÃO CRIADO");
+            $this->registrarMensagens($retorno['mensagem'], $this->options['sub_act'], "N");
+
+            // $this->registrarMensagens("DOCKER NÃO CRIADO", $this->options['sub_act'], "N");
+        }
+
+        return $zabbix;
+    }
+
+    function criarZabbixFrontEnd($empresa) {
+        require_once(dirname(__FILE__) . DS . 'empresa/zabbix.php');
+        $zabbix = new zabbix($empresa);
+        //COMENTANDO EM 22/01/2019    
+//        if ($zabbix->criarFrontEnd() == 1) {
+        //ADICIONANDO EM 22/01/2019
+        $retorno = $zabbix->criarFrontEnd();
+        if ($retorno['status'] == 0) {
+            //  echo "Front Zabbix criado \n <br>";
+            $this->empresa->setStatus_frontend_zabbix('S');
+            $this->empresa->getzabbix()->setst_front_zbx('S');
+            $this->empresa->setMsg_criacao($this->empresa->getMsg_criacao() . "FRONTEND ZABBIX CRIADO");
+            $this->registrarMensagens("FRONTEND ZABBIX CRIADO", $this->options['sub_act'], "S");
+        } else {
+            //  echo "Front Zabbix NÃO criado \n <br>";
+            $this->empresa->setStatus_frontend_zabbix('N');
+            $this->empresa->getzabbix()->setst_front_zbx('N');
+            $this->empresa->setMsg_criacao($this->empresa->getMsg_criacao() . "FRONTEND ZABBIX DOCKER CRIADO");
+            $this->registrarMensagens($retorno['mensagem'], $this->options['sub_act'], "N");
+        }
+
+        return $zabbix->getEmpresa()->getZabbix();
+    }
+
+    function cadastrarZabbixPostgres($zabbixM) {
+        require_once(dirname(__FILE__) . DS . 'empresa/zabbixDAO.php');
+        $zabbixDao = new zabbixDAO();
+
+        $zabbixM = $zabbixDao->insereZabbix($zabbixM);
+
+        return $zabbixM;
+    }
+
+    function atualizaStUsuariosPostgres($usuarios) {
+        require_once(dirname(__FILE__) . DS . 'empresa/usuarioDAO.php');
+        $usuarioDAO = new usuarioDAO();
+
+        $usuarioAtualizados = Array();
+        foreach ($usuarios as $key => $value) {
+            array_push($usuarioAtualizados, $usuarioDAO->atualizaStUsuariosPostgres($value));
+        }
+
+        return $usuarioAtualizados;
+    }
+
+    function atualizarZabbixPostgres($zabbixM) {
+        require_once(dirname(__FILE__) . DS . 'empresa/zabbixDAO.php');
+        $zabbixDao = new zabbixDAO();
+        $zabbixM = $zabbixDao->updateZabbix($zabbixM);
+
+        return $zabbixM;
+    }
+
+    function cadastrarZabbixDocker($empresa) {
+        require_once(dirname(__FILE__) . DS . 'empresa/zabbix.php');
+        $zabbix = new zabbix($empresa);
+
+        if ($this->empresa->getZabbix()->getSt_db_zbx() == 'N') {
+            $retorno = $zabbix->criarBancoZabbix();
+            if ($retorno['status'] == 0) {
+                $this->registrarMensagens("BANCO DO ZABBIX CRIADO", $this->options['sub_act'], "S");
+                $this->empresa->getZabbix()->setSt_db_zbx('S');
+                if (strcasecmp($this->empresa->getStatus_zabbix(), "N") !== 0) {
+                    $this->empresa->setStatus_zabbix('S');
+                }
+            } else {
+                $this->registrarMensagens($retorno['mensagem'], $this->options['sub_act'], "N");
+                $this->empresa->setMsg_criacao($this->empresa->getMsg_criacao() . ", Erro ao criar o banco. ");
+                $this->empresa->getZabbix()->setSt_db_zbx('N');
+            }
+        }
+
+        if ($this->empresa->getZabbix()->getSt_user_db_zbx() == 'N') {
+
+            $retorno = $zabbix->criarUsuarioBancoZabbix();
+            if ($retorno['status'] == 0) {
+                // echo "Usuario Zabbix criado \n <br>";
+                $this->registrarMensagens("USUARIO DO BANCO DO ZABBIX CRIADO", $this->options['sub_act'], "S");
+                $this->empresa->getZabbix()->setSt_user_db_zbx('S');
+                if (strcasecmp($this->empresa->getStatus_zabbix(), "N") !== 0) {
+                    $this->empresa->setStatus_zabbix('S');
+                }
+            } else {
+                // echo "Usuário Zabbix NAO criado \n <br>";
+                $this->registrarMensagens($retorno['mensagem'], $this->options['sub_act'], "N");
+                $this->empresa->setMsg_criacao($this->empresa->getMsg_criacao() . ", Erro ao criar o usuário do banco. ");
+                $this->empresa->getZabbix()->setSt_user_db_zbx('N');
+            }
+        }
+
+        if ($this->empresa->getZabbix()->getst_perm_user_db_zbx() == 'N') {
+
+            $retorno = $zabbix->criarPermissaoUsuarioBancoZabbix();
+            if ($retorno['status'] == 0) {
+                // echo "Permissãoes ao Usuario no banco Zabbix criado \n <br>";
+                $this->registrarMensagens("PERMISSÕES AO USUÁRIO DO BANCO ZABBIX EFETUADA", $this->options['sub_act'], "S");
+                $this->empresa->getZabbix()->setst_perm_user_db_zbx('S');
+                if (strcasecmp($this->empresa->getStatus_zabbix(), "N") !== 0) {
+                    $this->empresa->setStatus_zabbix('S');
+                }
+            } else {
+                // echo "Permissões ao Usuário no banco Zabbix NAÕ criado \n <br>";
+                $this->registrarMensagens($retorno['mensagem'], $this->options['sub_act'], "N");
+                $this->empresa->setMsg_criacao($this->empresa->getMsg_criacao() . ", Erro ao dar permissões no banco. ");
+                $this->empresa->getZabbix()->setst_perm_user_db_zbx('N');
+            }
+        }
+
+
+        if ($this->empresa->getZabbix()->getst_perm_user_table_db_zbx() == 'N') {
+
+            $retorno = $zabbix->criarPermissaoUsuarioTabelasBancoZabbix();
+            if ($retorno['status'] == 0) {
+                // echo "Permissãoes ao Usuario nas tabelas Zabbix criado \n <br>";
+                $this->registrarMensagens("PERMISSÕES AS TABELAS DO ZABBIX EFETUADA", $this->options['sub_act'], "S");
+                $this->empresa->getZabbix()->setst_perm_user_table_db_zbx('S');
+                if (strcasecmp($this->empresa->getStatus_zabbix(), "N") !== 0) {
+                    $this->empresa->setStatus_zabbix('S');
+                }
+            } else {
+                // echo "Permissões ao Usuário nas tabelas Zabbix NAÕ criado \n <br>";
+                $this->registrarMensagens($retorno['mensagem'], $this->options['sub_act'], "N");
+                $this->empresa->setMsg_criacao($this->empresa->getMsg_criacao() . ", Erro ao dar permissões nas tabelas do banco. ");
+                $this->empresa->getZabbix()->setst_perm_user_table_db_zbx('N');
+            }
+        }
+
+        $this->empresa->setZabbix($zabbix->getEmpresa()->getZabbix());
+        // return $zabbix->getEmpresa()->getZabbix();
+    }
+
+    function cadastrarUsuariosPostgres($usuarios) {
+        require_once(dirname(__FILE__) . DS . 'empresa/usuarioDAO.php');
+        $usuarioDAO = new usuarioDAO();
+
+        $usuarioCadastrado = Array();
+        foreach ($usuarios as $key => $value) {
+
+            if ($value->getId() == null) {
+                array_push($usuarioCadastrado, $usuarioDAO->insereUsuario($value));
+            }
+        }
+
+        return $usuarioCadastrado;
+    }
+
+    function buscar_user() {
+
+        $user = $this->options['username'];
+        $email = $this->options['email'];
+        $pass = $this->options['senha'];
+        require_once(dirname(__FILE__) . DS . 'ldapModel.php');
+        $ldapM = new ldapModel();
+        $ldapM->setHost('127.0.0.1');
+        $ldapM->setPort('389');
+        $ldapM->setUserCN($user);
+        $ldapM->setPassCN($pass);
+        //  $ldapM->setUserCN('ldapadm');
+        //  $ldapM->setPassCN('gate#noc77');
+        require_once(dirname(__FILE__) . DS . 'ldapDAO.php');
+        $ldapD = new ldapDAO($ldapM);
+
+        if ($ldapD->ldap_conectar()) {
+            $user_status = $ldapD->check_user($user, $email);
+
+            // var_dump($ldapD->getLdap_entries_user());
+
+            if ($user_status == 0) {
+
+                //  echo "Usuário e senha não existem: " . $user_status;
+            } elseif ($user_status == 1) {
+                //  echo "Usuário e email existem";
+            } elseif ($user_status == 2) {
+                //  echo "Usuário OU email estao incorretos";
+            }
+        } else {
+            // echo "Não foi possível conectar a base do LDAP";
+        }
+    }
+
+    function cadastrarUsuariosLdap($usuarios) {
+
+        foreach ($usuarios as $key => $value) {
+
+            if ($value->getSt_ldap() === 'N') {
+                $usuarios[$key] = $this->register_user_ldap($value);
+            }
+        }
+
+        return $usuarios;
+    }
+
+    function register_user_ldap($usuario) {
+
+        // var_dump($usuario);
+        require_once(dirname(__FILE__) . DS . 'gLdapDAO.php');
+        $ldapD = new gLdapDAO(LDAP_HOST, LDAP_PORTA);
+
+        if ($ldapD->ldap_conectar()) {
+            $ldapD->setLdap_base(LDAP_BASE);
+
+            if ($ldapD->autenticar(LDAP_USER_ADMIN, LDAP_USER_PASS)) {
+
+                //muda o caminho base para efetuar o cadastro no grupo
+                $ldapD->setLdap_base(LDAP_OU);
+
+                $user = $usuario->getUsername();
+                $email = $usuario->getEmail();
+                $senha = $usuario->getSenha();
+                $givenName = $usuario->getGivenName();
+                $surname = $usuario->getSurname();
+
+                $user_status = $ldapD->check_user_by_uid($user);
+
+                if ($user_status == 0) {
+                    if ($ldapD->register_user($user, $givenName, $surname, $email, $senha)) {
+                        //   echo "Cadastrado com sucesso ".$user;
+                        $this->empresa->setStatus_ldap('S');
+                        $usuario->setSt_ldap('S');
+                        $this->empresa->setMsg_criacao($this->empresa->getMsg_criacao() . "USUARIO: " . $user . " CRIADO COM SUCESSO");
+                        $this->registrarMensagens("USUARIO: " . $user . " CRIADO COM SUCESSO", $this->options['sub_act'], "S");
+
+                        // return 1;
+                    } else {
+                        //   echo "Erro ao cadastrar o usuario ".$user;
+                        $this->empresa->setStatus_ldap('N');
+                        $usuario->setSt_ldap('N');
+                        $this->empresa->setMsg_criacao($this->empresa->getMsg_criacao() . "USUARIO: " . $user . " NÃO CRIADO");
+                        $this->registrarMensagens("USUARIO: " . $user . " NÃO CRIADO", $this->options['sub_act'], "N");
+
+                        // return 0;
+                    }
+
+                    //return 2;
+                    // echo "Usuário e senha não existem: " . $user;
+                } elseif ($user_status == 1) {
+                    //  echo "Usuário e email existem " . $user;
+                    $this->empresa->setStatus_ldap('N');
+                    $usuario->setSt_ldap('N');
+                    $this->empresa->setMsg_criacao($this->empresa->getMsg_criacao() . "USUÁRIO: " . $user . " E EMAIL: " . $email . " JA EXISTEM");
+                    $this->registrarMensagens("USUÁRIO: " . $user . " E EMAIL: " . $email . " JA EXISTEM", $this->options['sub_act'], "N");
+                } elseif ($user_status == 2) {
+                    //echo "Usuário OU email estao incorretos.".$user;
+                    $this->empresa->setStatus_ldap('N');
+                    $usuario->setSt_ldap('N');
+                    $this->empresa->setMsg_criacao($this->empresa->getMsg_criacao() . "USUÁRIO: " . $user . " OU EMAIL: " . $email . " ESTÃO INCORRETOS");
+                    $this->registrarMensagens("USUÁRIO: " . $user . " OU EMAIL: " . $email . " ESTÃO INCORRETOS", $this->options['sub_act'], "N");
+                }
+            } else {
+                //  Echo "Não foi possível conectar na base LDAP: Usuário ou senha inválidos ".$user;
+            }
+        }
+
+
+        return $usuario;
+    }
+
+    function register_user($empresa) {
+
+        require_once(dirname(__FILE__) . DS . 'gLdapDAO.php');
+        $ldapD = new gLdapDAO(LDAP_HOST, LDAP_PORTA);
+
+        if ($ldapD->ldap_conectar()) {
+            $ldapD->setLdap_base(LDAP_BASE);
+
+            //  echo "Conexao: ".$ldapD->getDs().", ldap_ou: ".$ldapD->getLdap_base(). ", Usuário: ".LDAP_USER_ADMIN. ", Senha: ".LDAP_USER_PASS;
+
+            if ($ldapD->autenticar(LDAP_USER_ADMIN, LDAP_USER_PASS)) {
+
+                //muda o caminho base para efetuar o cadastro no grupo
+                $ldapD->setLdap_base(LDAP_OU);
+
+                $user = $this->options['username'];
+                $email = $this->options['email'];
+                $senha = $this->options['senha'];
+                $givenName = $this->options['givenName'];
+                $surname = $this->options['surname'];
+
+                $user_status = $ldapD->check_user($user, $email);
+
+                if ($user_status == 0) {
+                    if ($ldapD->register_user($user, $givenName, $surname, $email, $senha)) {
+                        //   echo "Cadastrado com sucesso";
+                        return 1;
+                    } else {
+                        //   echo "Erro ao cadastrar o usuario";
+                        return 0;
+                    }
+
+                    // echo "Usuário e senha não existem: " . $user_status;
+                } elseif ($user_status == 1) {
+                    //  echo "Usuário e email existem " . $user_status;
+                } elseif ($user_status == 2) {
+                    // echo "Usuário OU email estao incorretos";
+                }
+                // Echo "Não foi possível conectar na base LDAP: Usuário ou senha inválidos";
+            }
+        }
+    }
+
+}
+?>
+
+

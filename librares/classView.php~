@@ -1,0 +1,95 @@
+<?php
+
+class classView
+{
+    
+  
+    private $modulo;
+    private $view;
+    private $option;
+    private $tp;
+	 private $tags = array(
+	 						'colRight' => '',
+							'colLeft'  => '',
+							'conteudo' => '',	 						
+	 						);    
+	 private $_output;    
+    private $_template;
+    function classView()
+    {
+       
+    }
+    
+    
+    function display($tpl = null)
+	 {
+		$result = $this->loadTemplate($tpl);
+		if (JError::isError($result)) {
+			return $result;
+		}
+
+		echo $result;
+	 }
+
+    
+    function loadTemplate($tpl = null)
+    {
+    	
+		
+			$this->_template = PATH_TEMPLATES.DS.'index.php';
+			
+			$tplParse = new templateParser($this->_template);
+			
+			ob_start();
+			include $this->_template;
+
+			$this->_output = ob_get_contents();
+			ob_end_clean();
+			
+			
+			return $this->_output;    	
+    	
+    	
+    	
+		/**$tp->parseTemplate($tags);
+		echo $tp->display();
+    **/
+    }
+    
+    
+       
+  
+    function getOption()
+    {
+        return $this->option;
+    }
+    
+    
+    
+    
+    function getModulo()
+    {
+        return $this->modulo;
+    }
+    
+    function getView()
+    {
+        return $this->view;
+    }
+    
+    
+    
+    function setModulo($modulo)
+    {
+        $this->modulo = $modulo;
+    }
+    
+    function setView($view)
+    {
+        $this->view = $view;
+    }
+ 	
+    
+}
+
+?>

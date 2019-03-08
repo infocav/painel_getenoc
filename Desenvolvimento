@@ -1,0 +1,17 @@
+##
+
+------
+04/10/2018 -- 
+
+* Criar checagem de usuários
+    -Checar se o usuário no momento do cadastro já existe ok
+        -- Buscar no banco pelo login - independente de empresa ok
+        -- Se for da mesma empresa , checar os status de criação - ldap, zabbix, grafana
+    -Bloquear o cadastro desse usuário
+
+* procurar outros pontos de checagens de erros
+
+* implementar as modificações na tela de cadastro na tela de edição
+* Bloquear a tela de edição, só editar (CHECAR COM O CICO)
+* Painel de usuário - Opções de Edição de usuário, 
+
